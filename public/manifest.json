@@ -1,0 +1,10 @@
+{
+  "name": "GMU Connect",
+  "short_name": "GMU Connect",
+  "description": "Smart Campus Integrated Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#166534",
+  "icons": []
+}
