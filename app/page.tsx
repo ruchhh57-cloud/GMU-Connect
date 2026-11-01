@@ -1,7 +1,8 @@
+
 "use client";
 
 import { useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   GraduationCap, Users, LayoutDashboard, CalendarDays, BookOpen,
   ClipboardCheck, FileText, Trophy, CreditCard, MapPin, ShieldAlert,
@@ -9,11 +10,6 @@ import {
   ChartNoAxesCombined, ClipboardList, Presentation, ChevronRight,
   Home, Settings, Download
 } from "lucide-react";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 type Role = "Student" | "Faculty";
 type Section = string;
@@ -36,23 +32,58 @@ type Submission = {
   faculty_feedback: string | null;
 };
 
+// Create the Supabase client only when it is needed.
+// This avoids a build-time crash if environment variables are missing.
+let supabaseClient: SupabaseClient | null = null;
+
+function getSupabase(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Add them in Vercel Environment Variables."
+    );
+  }
+
+  if (!supabaseClient) {
+    supabaseClient = createClient(url, anonKey);
+  }
+
+  return supabaseClient;
+}
+
 const studentItems = [
-  ["Overview", LayoutDashboard], ["Attendance", ClipboardCheck],
-  ["Courses", BookOpen], ["Exams", CalendarDays], ["Results", Trophy],
-  ["Quizzes", ClipboardList], ["Quiz Results", ChartNoAxesCombined],
-  ["Timetable", CalendarDays], ["Fee Payment", CreditCard],
-  ["Assignments", FileText], ["Campus Events", Bell],
-  ["Campus Map", MapPin], ["Emergency & Safety", ShieldAlert]
+  ["Overview", LayoutDashboard],
+  ["Attendance", ClipboardCheck],
+  ["Courses", BookOpen],
+  ["Exams", CalendarDays],
+  ["Results", Trophy],
+  ["Quizzes", ClipboardList],
+  ["Quiz Results", ChartNoAxesCombined],
+  ["Timetable", CalendarDays],
+  ["Fee Payment", CreditCard],
+  ["Assignments", FileText],
+  ["Campus Events", Bell],
+  ["Campus Map", MapPin],
+  ["Emergency & Safety", ShieldAlert]
 ] as const;
 
 const facultyItems = [
-  ["Overview", LayoutDashboard], ["Attendance Manager", ClipboardCheck],
-  ["Courses & Materials", BookOpen], ["Marks & Grades", Trophy],
-  ["Digital Whiteboard", Presentation], ["Academic Planner", CalendarDays],
-  ["Quiz Builder", ClipboardList], ["Quiz Analyser", ChartNoAxesCombined],
-  ["Timetable", CalendarDays], ["Assignment Review", FileText],
-  ["Event Manager", Bell], ["Campus Map", MapPin],
-  ["Emergency & Safety", ShieldAlert], ["Lab Equipment", FlaskConical]
+  ["Overview", LayoutDashboard],
+  ["Attendance Manager", ClipboardCheck],
+  ["Courses & Materials", BookOpen],
+  ["Marks & Grades", Trophy],
+  ["Digital Whiteboard", Presentation],
+  ["Academic Planner", CalendarDays],
+  ["Quiz Builder", ClipboardList],
+  ["Quiz Analyser", ChartNoAxesCombined],
+  ["Timetable", CalendarDays],
+  ["Assignment Review", FileText],
+  ["Event Manager", Bell],
+  ["Campus Map", MapPin],
+  ["Emergency & Safety", ShieldAlert],
+  ["Lab Equipment", FlaskConical]
 ] as const;
 
 const subjects = [
@@ -70,7 +101,10 @@ const initialAttendance = [
 ];
 
 const exams = [
-  "Semester End Exam", "Mid-Term Exam", "Makeup Exam", "Resit Exam"
+  "Semester End Exam",
+  "Mid-Term Exam",
+  "Makeup Exam",
+  "Resit Exam"
 ];
 
 export default function HomePage() {
@@ -108,12 +142,12 @@ export default function HomePage() {
   const items = role === "Student" ? studentItems : facultyItems;
 
   const average = Math.round(
-    attendance.reduce((a, x) => a + x.attended / x.total, 0) /
+    attendance.reduce((total, item) => total + item.attended / item.total, 0) /
     attendance.length * 100
   );
 
   const activeIcon = useMemo(
-    () => items.find(x => x[0] === section)?.[1] ?? Home,
+    () => items.find(item => item[0] === section)?.[1] ?? Home,
     [items, section]
   );
 
@@ -121,6 +155,8 @@ export default function HomePage() {
     setLoadingAssignments(true);
 
     try {
+      const supabase = getSupabase();
+
       let assignmentQuery = supabase
         .from("assignments")
         .select("id,title,description,deadline")
@@ -134,6 +170,7 @@ export default function HomePage() {
         await assignmentQuery;
 
       if (assignmentError) {
+        setAvailableAssignments([]);
         setNotice("Could not load assignments: " + assignmentError.message);
       } else {
         setAvailableAssignments(assignmentData ?? []);
@@ -155,15 +192,16 @@ export default function HomePage() {
 
       if (submissionError) {
         setSubmissions([]);
-        setNotice(
-          "Assignments loaded, but submissions could not be loaded: " +
-          submissionError.message
-        );
+        setNotice("Could not load submissions: " + submissionError.message);
       } else {
         setSubmissions(submissionData ?? []);
       }
-    } catch {
-      setNotice("Something went wrong while loading assignments.");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while loading assignments."
+      );
     } finally {
       setLoadingAssignments(false);
     }
@@ -198,6 +236,13 @@ export default function HomePage() {
         return;
       }
 
+      if (!result.session?.access_token || !result.session?.refresh_token) {
+        setNotice("The server did not return a valid login session.");
+        return;
+      }
+
+      const supabase = getSupabase();
+
       const { data, error } = await supabase.auth.setSession({
         access_token: result.session.access_token,
         refresh_token: result.session.refresh_token
@@ -208,7 +253,12 @@ export default function HomePage() {
         return;
       }
 
-      const currentUserId = data.user?.id || result.user.id;
+      const currentUserId = data.user?.id || result.user?.id;
+
+      if (!currentUserId) {
+        setNotice("Could not identify your account. Please try again.");
+        return;
+      }
 
       setAuthUserId(currentUserId);
       setLoggedIn(true);
@@ -217,8 +267,12 @@ export default function HomePage() {
       setNotice("");
 
       await loadAssignmentData(role, currentUserId);
-    } catch {
-      setNotice("Unable to connect to the server. Please try again.");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Unable to connect to the server. Please try again."
+      );
     } finally {
       setLoginLoading(false);
     }
@@ -234,8 +288,10 @@ export default function HomePage() {
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith(".pdf") &&
-        file.type !== "application/pdf") {
+    if (
+      file.type !== "application/pdf" &&
+      !file.name.toLowerCase().endsWith(".pdf")
+    ) {
       setNotice("Please select a PDF file.");
       e.target.value = "";
       return;
@@ -261,6 +317,8 @@ export default function HomePage() {
       `${selectedAssignmentId}/${authUserId}/${Date.now()}-${safeName}`;
 
     try {
+      const supabase = getSupabase();
+
       const { error: uploadError } = await supabase.storage
         .from("assignment-files")
         .upload(filePath, file, {
@@ -293,10 +351,13 @@ export default function HomePage() {
       }
 
       setNotice("Your assignment PDF was submitted successfully!");
-
       await loadAssignmentData("Student", authUserId);
-    } catch {
-      setNotice("Something went wrong while uploading your PDF.");
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while uploading your PDF."
+      );
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -304,17 +365,25 @@ export default function HomePage() {
   }
 
   async function downloadSubmission(filePath: string) {
-    const { data, error } = await supabase.storage
-      .from("assignment-files")
-      .createSignedUrl(filePath, 60);
+    try {
+      const supabase = getSupabase();
 
-    if (error || !data?.signedUrl) {
-      setNotice("Could not open this PDF: " +
-        (error?.message || "No download link returned."));
-      return;
+      const { data, error } = await supabase.storage
+        .from("assignment-files")
+        .createSignedUrl(filePath, 60);
+
+      if (error || !data?.signedUrl) {
+        setNotice("Could not open this PDF: " +
+          (error?.message || "No download link returned."));
+        return;
+      }
+
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Could not open the PDF."
+      );
     }
-
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   }
 
   function action(message: string) {
@@ -323,14 +392,17 @@ export default function HomePage() {
 
   function addEvent() {
     if (!newEvent.trim()) return;
-
     setEvents(old => [newEvent.trim(), ...old]);
     setNewEvent("");
     setNotice("Event added in this browser session.");
   }
 
   async function logout() {
-    await supabase.auth.signOut();
+    try {
+      await getSupabase().auth.signOut();
+    } catch {
+      // Clear the local portal even if the network sign-out fails.
+    }
 
     setLoggedIn(false);
     setAuthUserId("");
@@ -414,8 +486,6 @@ export default function HomePage() {
     );
   }
 
-  const Icon = activeIcon;
-
   return (
     <div className="appShell">
       {mobileOpen && (
@@ -452,10 +522,8 @@ export default function HomePage() {
                 setSection(name);
                 setMobileOpen(false);
                 setNotice("");
-                if (
-                  name === "Assignments" ||
-                  name === "Assignment Review"
-                ) {
+
+                if (name === "Assignments" || name === "Assignment Review") {
                   loadAssignmentData(role, authUserId);
                 }
               }}
@@ -489,9 +557,7 @@ export default function HomePage() {
           </button>
 
           <div>
-            <p className="eyebrow">
-              GM UNIVERSITY / {role.toUpperCase()}
-            </p>
+            <p className="eyebrow">GM UNIVERSITY / {role.toUpperCase()}</p>
             <h2>{section}</h2>
           </div>
 
@@ -547,9 +613,7 @@ export default function HomePage() {
           )}
 
           <div className="footerNote">
-            GMU Connect · Academic Portal
-            <span>•</span>
-            Assignment files are stored securely
+            GMU Connect <span>•</span> Academic Portal
           </div>
         </div>
       </main>
@@ -671,14 +735,12 @@ function Service(props: any) {
             <h3>{isFaculty ? "Mark subject attendance" : "Subject-wise attendance"}</h3>
             <b className="pill">{average}% overall</b>
           </div>
-
           <div className="tableWrap">
             <table>
               <thead>
                 <tr>
                   <th>Subject</th><th>Attended</th><th>Total</th>
-                  <th>Percentage</th>
-                  {isFaculty && <th>Action</th>}
+                  <th>Percentage</th>{isFaculty && <th>Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -714,7 +776,6 @@ function Service(props: any) {
               </tbody>
             </table>
           </div>
-
           <p className="hint">
             Sample data for layout testing. Connect authorized university records before relying on these values.
           </p>
@@ -900,19 +961,13 @@ function Service(props: any) {
     return (
       <>
         {title(section)}
-
         <div className="panel">
           <div className="panelHead">
             <h3>{isFaculty ? "Student submissions" : "Available assignments"}</h3>
-            <button
-              className="smallBtn"
-              onClick={() => action("Use the Assignments menu to refresh the list.")}
-            >
-              {loadingAssignments ? "Loading..." : "Assignment portal"}
-            </button>
+            <span className="pill">
+              {loadingAssignments ? "Loading..." : `${availableAssignments.length} assignments`}
+            </span>
           </div>
-
-          {loadingAssignments && <p className="hint">Loading assignments...</p>}
 
           {!isFaculty && (
             <>
@@ -1135,7 +1190,10 @@ function Service(props: any) {
         <div className="panel">
           <h3>Teaching whiteboard</h3>
           <textarea className="whiteboard" placeholder="Type lesson notes here..." />
-          <button className="outlineBtn topGap" onClick={() => action("Notes are temporary in this prototype. Add cloud saving in the next stage.")}>
+          <button
+            className="outlineBtn topGap"
+            onClick={() => action("Notes are temporary in this prototype. Add cloud saving in the next stage.")}
+          >
             Save notes
           </button>
         </div>
