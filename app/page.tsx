@@ -63,9 +63,7 @@ export default function HomePage() {
   function login(e: React.FormEvent) {
     e.preventDefault();
     if (!userId.trim() || !password.trim()) { setNotice("Enter your ID and password."); return; }
-    if (role === "Student" && !/^U\d{2}E\d{2}IO\d{3}$/i.test(userId.trim())) {
-      setNotice("Enter a valid student USN, for example U25E01IO037."); return;
-    }
+    
     setLoggedIn(true); setSection("Overview"); setNotice("");
   }
   function action(message: string) { setNotice(message); }
