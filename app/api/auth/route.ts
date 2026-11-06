@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: NextRequest) {
   try {
     const { universityId, password, role } = await request.json();
@@ -12,9 +14,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL!;
-    const anonKey = process.env.SUPABASE_ANON_KEY!;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const anonKey = process.env.SUPABASE_ANON_KEY;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !anonKey || !serviceKey) {
       return NextResponse.json(
@@ -69,7 +71,9 @@ export async function POST(request: NextRequest) {
       },
       session: data.session
     });
-  } catch {
+  } catch (error) {
+    console.error("Authentication route error:", error);
+
     return NextResponse.json(
       { error: "Unable to sign in. Please try again." },
       { status: 500 }
